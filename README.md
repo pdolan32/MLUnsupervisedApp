@@ -9,7 +9,7 @@ With this app, users can:
 - Specify and tune model hyperparameters, such as cluster number (k), n_components, and linkage methods
 - Visualize model performance with tools like PCA Scatter Plots, Scree Plots, Silhouette Analysis curves, and dendrograms.
 
-Click [HERE]() to access the app online.
+Click [HERE](https://dolan-data-science-portfolio-ml-unsupervised-app.streamlit.app/) to access the app online.
 
 # Instructions:
 
