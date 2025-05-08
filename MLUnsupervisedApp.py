@@ -25,54 +25,69 @@ target_column = None
 df = None
 
 if option == 'Upload Your Own': # If the user chooses to upload their own dataset
-    
-    uploaded_file = st.sidebar.file_uploader("Upload a CSV file", type='csv') # Creates a file uploader widget in the sidebar, allowing users to upload .csv files.
-    if uploaded_file is not None: # This checks if the user has actually uploaded a file. If not, the rest of the code inside this block will not run.
-        df = pd.read_csv(uploaded_file) # Reads the uploaded CSV file into a pandas DataFrame called df.
-        st.subheader("Uploaded Dataset:")
-        st.write(df.head())
-        st.subheader("Summary Statistics:")
-        st.write(df.describe()) # Displays summary statistics (mean, std, min, max, etc.) for numeric columns in the uploaded dataset.
-    
+    uploaded_file = st.sidebar.file_uploader("Upload a .csv file", type='csv') # Creates a file uploader widget in the sidebar of the Streamlit app.
 
-        # Creates a checkbox in the sidebar. If the user checks it, they are saying their dataset includes a target column (i.e., a column they want to predict or analyze separately).
-        if st.sidebar.checkbox("Does your dataset include a target column?"):
-            target_column = st.sidebar.selectbox("Select target column:", df.columns)
+    if uploaded_file is not None:
+        df = pd.read_csv(uploaded_file) # This checks whether a file was uploaded: if yes (uploaded_file is not None), it reads the uploaded .csv file using Pandas
+        st.write("In order to analyze your uploaded dataset, please choose an unsupervised machine learning model from the sidebar.")
+        st.write("Please use the tools and widgets in the sidebar to prepare your dataset for analysis. There is a cleaned dataset at the bottom that will be used in the analysis and will reflect the results of your data preprocessing choices.")
+        st.sidebar.subheader("Data Preprocessing Options")
         
-        column = st.selectbox("Choose a column to fill", df.select_dtypes(include=['number']).columns)
-        # Provide options for how to handle missing data.
-        method = st.radio("Choose a method", [
-            "Original DF", 
-            "Drop Rows", 
-            "Drop Columns (>50% Missing)", 
-            "Impute Mean", 
-            "Impute Median", 
-            "Impute Zero"
-        ])
+        st.subheader("Uploaded Dataset:")
+        st.write(df.head()) # The first five rows of the uploaded dataset are displayed
 
-        df_clean = df.copy()
+        st.subheader("Summary Statistics:")
+        st.write(df.describe()) # The summary statistics of the uploaded dataset are displayed
 
-        if method == "Original DF":
-            pass  # Keep the data unchanged.
-        elif method == "Drop Rows":
-            # Remove all rows that contain any missing values.
-            df_clean = df_clean.dropna()
-        elif method == "Drop Columns (>50% Missing)":
-            # Drop columns where more than 50% of the values are missing.
-            df_clean = df_clean.drop(columns=df_clean.columns[df_clean.isnull().mean() > 0.5])
-        elif method == "Impute Mean":
-            # Replace missing values in the selected column with the column's mean.
-            df_clean[column] = df_clean[column].fillna(df[column].mean())
-        elif method == "Impute Median":
-            # Replace missing values in the selected column with the column's median.
-            df_clean[column] = df_clean[column].fillna(df[column].median())
-        elif method == "Impute Zero":
-            # Replace missing values in the selected column with zero.
-            df_clean[column] = df_clean[column].fillna(0)
+        if 'df_clean' not in st.session_state: 
+            st.session_state.df_clean = df.copy() # Creates a copy of the original DataFrame df and stores this copy in st.session_state.df_clean so that it persists across user interactions.
 
-        st.write(df_clean.head())
+        df_clean = st.session_state.df_clean # retrieves the persistent version of the cleaned dataset from session_state and assigns it to the local variable df_clean.
 
-        st.markdown('##### In order to analyze this dataset, please choose an unsupervised machine learning model from the sidebar.')
+        if st.sidebar.checkbox("Does your dataset include a target column?"):
+            # Displays a dropdown menu (selectbox) with all column names in the DataFrame df; lets the user choose one as the target column
+            target_column = st.sidebar.selectbox("Select target column:", df.columns) 
+            if target_column:
+                target_names = df[target_column].unique() # df[target_column].unique() gets all unique values in that column 
+                target_names.sort()
+
+        cols_to_drop = st.sidebar.multiselect( # Adds a multiselect widget in the sidebar, allowing the user to choose multiple columns from the original DataFrame df to drop.
+            "Select columns to drop:", df.columns, default=[]
+        )
+
+        # Apply drops only if user selected columns and they exist in the current df_clean
+        if cols_to_drop:
+            # Only drop if those columns haven't already been dropped
+            remaining_cols = set(df_clean.columns)
+            valid_cols_to_drop = [col for col in cols_to_drop if col in remaining_cols]
+            if valid_cols_to_drop: # Drops only the valid, remaining columns from df_clean
+                df_clean.drop(columns=valid_cols_to_drop, inplace=True)
+                st.session_state.df_clean = df_clean  # Save the updated df_clean
+                st.success(f"Dropped columns: {valid_cols_to_drop}")
+
+        if st.sidebar.button("Drop Rows with Missing Values"):
+            df_clean = df_clean.dropna() # Drop rows with missing values
+            st.session_state.df_clean = df_clean  # Update session state
+            st.success("Rows with missing values have been removed.")
+
+        # allows users to apply one-hot encoding to any categorical variables in their dataset
+        categorical_cols = df_clean.select_dtypes(include=['object', 'category']).columns.tolist() # Identifies all columns in df_clean that are of type 'object' or 'category'
+        if st.sidebar.checkbox("Apply one-hot encoding to categorical columns?"):
+            # Applies one-hot encoding using pd.get_dummies()
+            if categorical_cols:
+                st.write(f"Encoding the following categorical columns: {categorical_cols}")
+                df_clean = pd.get_dummies(df_clean, columns=categorical_cols, drop_first=True) # avoids multicollinearity by dropping the first category in each encoded column.
+                st.session_state.df_clean = df_clean  # Save the updated df_clean
+            else:
+                st.write("No categorical columns detected for encoding.")
+
+        # Final output
+        st.subheader("Cleaned Dataset Preview:")
+        st.write(df_clean.head()) # Displays the first 5 rows of the cleaned dataset (df_clean)
+        st.markdown(f"**Total rows in cleaned dataset:** {df_clean.shape[0]}")
+
+        # Updates the main df variable to now reference the cleaned version of the data.
+        df = df_clean
 
 else: # If the user selected not to upload their own data, this line displays a dropdown in the sidebar to let them pick from three built-in sample datasets.
     dataset_option = st.sidebar.selectbox('Choose Sample Dataset', ('Breast Cancer', 'Iris', 'Wine'))
@@ -290,6 +305,7 @@ if df is not None: # Checks whether a DataFrame (df) has been successfully loade
 
         st.subheader('K-Means Clustering')
         st.write('The unsupervised learning model you have chosen is: K-Means Clustering. K-Means Clustering is an unsupervised machine learning algorithm used to group data into "k" distinct clusters based on similarity. The algorithm partitions the dataset into k clusters such that each data point belongs to the cluster with the nearest mean (centroid).')
+        st.write('While reading through the model results, consult the sidebar to try changing the number of clusters and observe how the visuals and metrics change.')
         st.write('Note: since K-Means Clustering relies on distance calculations and can be biased by the scale of features, the data is centered and scaled')
 
         # Uses StandardScaler to center and scale the features: this is crucial for K-Means Clustering since it uses Euclidean distance.
@@ -397,6 +413,7 @@ if df is not None: # Checks whether a DataFrame (df) has been successfully loade
 
         # --- Plot 3: Elbow Method and Silhouette Scores ---
         st.markdown('#### Visualizations for Elbow Method and Silhouette Score')
+        st.write('Try changing the number of clusters (k) to see how these visuals change')
         fig3, (ax3a, ax3b) = plt.subplots(1, 2, figsize=(12, 5))
 
         # Elbow curve (WCSS vs. k)
@@ -416,7 +433,7 @@ if df is not None: # Checks whether a DataFrame (df) has been successfully loade
         plt.tight_layout()
         st.pyplot(fig3)
 
-    if model_option == 'Hierarchical Clustering': 
+    if model_option == 'Hierarchical Clustering': # Only run this block if the user selected Hierarchical Clustering in the sidebar.
 
         st.subheader('Hierarchical Clustering')
         st.write('The unsupervised learning model you have chosen is: Hierarchical Clustering. Hierarchical Clustering is an unsupervised machine learning algorithm used to group similar data points into clusters based on their distance or similarity to one another.')
@@ -439,6 +456,7 @@ if df is not None: # Checks whether a DataFrame (df) has been successfully loade
         st.markdown('**Single:** merges clusters with the smallest minimum distance between any two points.')
         st.markdown('**Complete:** merges clusters with the smallest maximum distance between points.')
         st.markdown('**Average:** uses the average distance between all points in two clusters.')
+        st.write('Try changing the linkage method in the sidebar to see different results for both the dendrogram.')
         Z = linkage(X_scaled, method=linkage_option) # Computes the hierarchical clustering tree (Z) using the selected linkage method.
 
         if y is not None:
